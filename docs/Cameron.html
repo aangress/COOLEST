@@ -1,0 +1,1770 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SIS + Shear Lensing — Sérsic Source + Time Delay</title>
+<style>
+  :root{--bg:#0b0e13;--panel:#121822;--muted:#8aa0b7;--fg:#e9f1fb;--accent:#4fd1c5;--warn:#f59e0b;--ok:#22c55e}
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,"Helvetica Neue",Arial;color:var(--fg);background:linear-gradient(#0b0e13,#0d1219)}
+  .app{display:grid;grid-template-columns:320px 1fr 320px;gap:14px;padding:14px;max-width:1600px;margin:0 auto}
+  .card{background:var(--panel);border:1px solid rgba(255,255,255,.07);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  .panels{
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));  /* default 2×2 */
+    align-items: start;
+    justify-self: stretch;  /* don't let it shrink to content */
+  }
+  .panels .card{ min-width: 0; }  /* prevents overflow forcing extra columns */
+
+  /* Small screens: stack */
+  @media (max-width: 900px){
+    .panels{
+      grid-template-columns: 1fr;
+    }
+  }
+.title{display:flex;justify-content:space-between;align-items:end;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.06)}
+  .title h1{font-size:16px;margin:0}
+  .subtitle{font-size:12px;color:var(--muted)}
+  .canvas-wrap{padding:10px}
+  canvas{width:100%;aspect-ratio:1/1;background:#000;border-radius:10px;display:block}
+  /* shared controls style */
+  .controls{
+    position: static;
+    top: auto;
+    display: grid;
+    gap: 12px;
+    align-content: start;   /* prevent grid rows from stretching */
+  }
+
+  /* left column stays full-height */
+  .controls--left{
+    height: auto;
+  }
+
+  /* right column only as tall as its content */
+  .controls--right{
+    height: auto;           /* stop after the "Center source" button */
+  }
+  .fits-controls{
+  margin-top:10px;}
+  .group{padding:12px;border-radius:14px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.02)}
+  h2{font-size:13px;margin:0 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+  .row{
+    display:grid;
+    grid-template-columns:1fr 70px;
+    gap:4px;                /* was 8px */
+    align-items:center;
+    margin:8px 0;
+  }
+  .row label{font-size:12px}
+  .row input[type=range]{width:100%}
+  .row input[type=number]{width:100%;background:#0b1016;color:var(--fg);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:6px}
+  .tog{display:flex;gap:10px;flex-wrap:wrap}
+  .tog label{font-size:12px;color:var(--fg)}
+  .btn{cursor:pointer;border-radius:10px;background:linear-gradient(#18212b,#131a22);color:var(--fg);border:1px solid rgba(255,255,255,.08);padding:8px 10px}
+  .btn:hover{filter:brightness(1.08)}
+  .note{font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+  <div class="app">
+    <div class="controls controls--left">
+      <div class="group">
+        <h2>Lens: SIS + External Shear</h2>
+        <div class="row"><label>Einstein radius b = θ<sub>E</sub></label><input id="thetaE" type="range" min="0.1" max="2.5" step="0.01" value="1.0"><input id="thetaE_num" type="number" min="0.1" max="2.5" step="0.01" value="1.00"></div>
+        <div class="row"><label>Shear γ</label><input id="gamma" type="range" min="0" max="0.45" step="0.005" value="0.15"><input id="gamma_num" type="number" min="0" max="0.45" step="0.005" value="0.15"></div>
+        <div class="row"><label>Shear angle φ<sub>γ</sub> [deg]</label><input id="phi" type="range" min="0" max="180" step="1" value="0"><input id="phi_num" type="number" min="0" max="180" step="1" value="0"></div>
+        <div class="row"><label>Resolution [px]</label><input id="res" type="range" min="256" max="1024" step="64" value="512"><input id="res_num" type="number" min="256" max="1024" step="64" value="512"></div>
+        <div class="row"><label>FoV half-range [arcsec]</label><input id="fov" type="range" min="1.0" max="10.0" step="0.1" value="3.0"><input id="fov_num" type="number" min="1.0" max="10.0" step="0.1" value="3.0"></div>
+        <div class="tog">
+          <label><input id="showCrit" type="checkbox" checked> Critical curve</label>
+          <label><input id="showAstroid" type="checkbox" checked> Astroid caustic</label>
+          <label><input id="showPseudo" type="checkbox" checked> Pseudocaustic</label>
+        </div>
+        <div class="tog">
+          <button class="btn" id="resetLens">Reset lens</button>
+          <button class="btn" id="savePNG">Save PNG</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <h2>Cosmology</h2>
+        <div class="row">
+          <label>Lens z<sub>L</sub></label>
+          <input id="zL" type="range" min="0" max="2.5" step="0.01" value="0.5">
+          <input id="zL_num" type="number" min="0" max="2.5" step="0.01" value="0.5">
+        </div>
+        <div class="row">
+          <label>Source z<sub>S</sub></label>
+          <input id="zS" type="range" min="0.05" max="6" step="0.01" value="2.0">
+          <input id="zS_num" type="number" min="0.05" max="6" step="0.01" value="2.0">
+        </div>
+        <div class="row">
+          <label>H<sub>0</sub> [km/s/Mpc]</label>
+          <input id="H0" type="range" min="50" max="90" step="0.5" value="70">
+          <input id="H0_num" type="number" min="50" max="90" step="0.5" value="70">
+        </div>
+        <div class="row">
+          <label>Ω<sub>m</sub></label>
+          <input id="Om" type="range" min="0.1" max="0.5" step="0.01" value="0.3">
+          <input id="Om_num" type="number" min="0.1" max="0.5" step="0.01" value="0.3">
+        </div>
+      </div>
+
+      <div class="group">
+        <h2>Config (Export / Import)</h2>
+        <textarea id="cfgText" rows="10" style="width:100%;background:#0b1016;color:var(--fg);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:8px;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;"></textarea>
+        <div class="tog" style="margin-top:8px">
+            <button class="btn" id="exportCfg">Export</button>
+            <button class="btn" id="copyCfg">Copy</button>
+            <button class="btn" id="applyCfg">Apply</button>
+        </div>
+        <div class="note">Angles export in degrees (<code>phi_deg</code>, <code>pa_deg</code>). Import accepts JSON or Python-style dict.</div>
+      </div>
+    </div>
+
+    <div class="panels">
+      <div class="card">
+        <div class="title"><h1>Source Plane</h1><div class="subtitle">Sérsic (drag centre) •  <span style="color:#f59e0b">Astroid</span> • <span style="color:#109fbb">Pseudocaustic</span></div></div>
+        <div class="canvas-wrap" style="position:relative"><canvas id="srcCanvas"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="title"><h1>Image Plane</h1><div class="subtitle">Lensed image •  <span style="color:rgb(210, 86, 98)">Critical curve</span></div></div>
+        <div class="canvas-wrap" style="position:relative"><canvas id="imgCanvas"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="title"><h1>Time-Delay Surface</h1><div class="subtitle">Fermat τ(θ; β)</div></div>
+        <div class="canvas-wrap" style="position:relative"><canvas id="tdCanvas"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="title">
+          <h1>Data (FITS)</h1>
+          <div class="subtitle">Upload a .fits image to compare</div>
+        </div>
+      <div class="canvas-wrap" style="position:relative">
+        <span class="subtitle" id="fitsScaleLabel"
+              style="position:absolute;left:10px;top:10px;background:rgba(0,0,0,.35);padding:4px 8px;border-radius:8px">—</span>
+
+        <canvas id="fitsCanvas"></canvas>
+
+        <!-- moved below the canvas -->
+        <div class="fits-controls">
+          <input id="fitsFile" class="btn" type="file" accept=".fits,.fit,.fts">
+        </div>
+      </div>
+      </div>
+    </div>
+
+    <div class="controls controls--right">
+      <div class="group">
+        <h2>Source: Sérsic</h2>
+        <div class="row">
+          <label>x₀ [θ<sub>E</sub>]</label>
+          <input id="x0" type="range" min="-3.0" max="3.0" step="0.01" value="0.2">
+          <input id="x0_num" type="number" min="-3.0" max="3.0" step="0.01" value="0.2">
+        </div>
+        <div class="row">
+          <label>y₀ [θ<sub>E</sub>]</label>
+          <input id="y0" type="range" min="-3.0" max="3.0" step="0.01" value="0.0">
+          <input id="y0_num" type="number" min="-3.0" max="3.0" step="0.01" value="0.0">
+        </div>
+        <div class="row"><label>Index n</label><input id="n" type="range" min="0.5" max="6" step="0.1" value="2.0"><input id="n_num" type="number" min="0.5" max="6" step="0.1" value="2.0"></div>
+        <div class="row"><label>R<sub>e</sub> [θ<sub>E</sub>]</label><input id="Re" type="range" min="0.02" max="0.8" step="0.01" value="0.12"><input id="Re_num" type="number" min="0.02" max="0.8" step="0.01" value="0.12"></div>
+        <div class="row"><label>Axis ratio q=b/a</label><input id="q" type="range" min="0.3" max="1.0" step="0.01" value="0.8"><input id="q_num" type="number" min="0.3" max="1.0" step="0.01" value="0.8"></div>
+        <div class="row"><label>PA [deg]</label><input id="pa" type="range" min="0" max="180" step="1" value="30"><input id="pa_num" type="number" min="0" max="180" step="1" value="30"></div>
+        <div class="row"><label>Peak I<sub>0</sub></label><input id="I0" type="range" min="0.05" max="3.0" step="0.05" value="1.0"><input id="I0_num" type="number" min="0.05" max="3.0" step="0.05" value="1.0"></div>
+        <div class="tog">
+          <button class="btn" id="centerSource">Centre source</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="title">
+          <h1>Lens Stats</h1>
+          <div class="subtitle">Point source at β = (x₀, y₀)</div>
+        </div>
+        <div class="canvas-wrap">
+          <div id="statsContent" style="font:12px ui-monospace, SFMono-Regular, Menlo, Consolas; line-height:1.5"></div>
+        </div>
+        <div style="margin-top:8px" class="tog">
+          <input type="file" id="templateFileInput" accept=".json" style="display:none">
+          <button class="btn" id="chooseTemplate">Choose template...</button>
+          <button class="btn" id="importTemplate">Import COOLEST template</button>
+          <button class="btn" id="exportTemplate">Export COOLEST template</button>
+        </div>
+        <div class="note">Import a COOLEST template (JSON) to populate the UI, or export the current model as a COOLEST template.</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+// ---------------- Config ----------------
+let FOV = 3.0;            // fixed half-range in θ_E units
+const FIXED_EXPO = 2.0;     // asinh exposure is fixed
+
+// ---------------- Utilities ----------------
+const TAU = Math.PI*2;
+const toRad = d=>d*Math.PI/180;
+const clamp = (x,a,b)=>Math.max(a,Math.min(b,x));
+const ASEC2RAD = Math.PI / (180 * 3600);     // arcsec → rad
+const MPC_TO_M = 3.085677581491367e22;       // meters per Mpc
+const C_MS = 299792458;                      // m/s
+const G_SI  = 6.67430e-11;          // m^3 kg^-1 s^-2
+const M_SUN = 1.98847e30;           // kg
+const KPC_PER_MPC = 1000;
+// ---------------- State ----------------
+const srcCanvas = document.getElementById('srcCanvas');
+const imgCanvas = document.getElementById('imgCanvas');
+const tdCanvas  = document.getElementById('tdCanvas');
+const fitsCanvas = document.getElementById('fitsCanvas');
+const dpr = Math.max(1, window.devicePixelRatio||1);
+let   fitsCtx    = fitsCanvas ? setupCanvas(fitsCanvas) : null;
+const fitsScaleLabel = document.getElementById('fitsScaleLabel');
+
+
+const ui = id=>document.getElementById(id);
+
+const state = {
+  // Lens
+  thetaE: 1.0, // b
+  gamma: 0.15,
+  phi: 0.0, // rad
+  res: 512,
+  showCrit: true,
+  showAstroid: true,
+  showPseudo: true,
+  // Display (fixed)
+  expo: FIXED_EXPO,
+  // Source
+  src: { x0: 0.2, y0: 0.0, n: 2.0, Re: 0.12, q: 0.8, pa: toRad(30), I0: 1.0 },
+  cosmo: { H0: 70, Om: 0.3, zL: 0.5, zS: 2.0 },
+  dist:  { Dl: 0, Ds: 0, Dls: 0, scale_sec_per_arcsec2: 0 } // cache
+};
+
+
+state.fits = {
+  data: null, width: 0, height: 0,
+  imageBitmap: null,
+  scale_as_per_pix: null,   // arcsec/pixel from WCS, else null
+  rot_rad: 0,
+  cx: null, cy: null,
+};
+state.fits.offPx = 0;   // user offset in FITS *pixels* (x to the right)
+state.fits.offPy = 0;   // user offset in FITS *pixels* (y down)
+
+let betaMap = null; // Float32Array of length 2*N*N
+let detAmap = null; // Float32Array of length N*N
+
+// Time-delay (Fermat) surface τ(θ;β)
+let tauMap  = null; // Float32Array of length N*N
+let tauMin = 0, tauMax = 1;
+
+function setupCanvas(canvas){
+  if (!canvas) return null;
+  const _dpr = Math.max(1, window.devicePixelRatio || 1);
+  const cw = canvas.clientWidth || canvas.getBoundingClientRect().width || (canvas.parentElement?.clientWidth) || 300;
+  const px = Math.max(1, Math.floor(cw * _dpr));   // never 0
+  canvas.width  = px;
+  canvas.height = px;
+  return canvas.getContext('2d');
+}
+let srcCtx = setupCanvas(srcCanvas);
+let imgCtx = setupCanvas(imgCanvas);
+let tdCtx  = setupCanvas(tdCanvas);
+
+window.addEventListener('resize', ()=>{
+  srcCtx  = setupCanvas(srcCanvas);
+  imgCtx  = setupCanvas(imgCanvas);
+  tdCtx   = setupCanvas(tdCanvas);
+  if (fitsCanvas) fitsCtx = setupCanvas(fitsCanvas);
+  fullRecompute();          // redraw model
+  renderFITSCanvas();       // <-- draw cached FITS (no re-parse)  
+});
+
+// ---------------- Cosmology functions ----------------
+// Flat ΛCDM distances (quick numerical integral)
+function Ez(z, Om){ return Math.sqrt(Om*Math.pow(1+z,3) + (1-Om)); }
+
+// simple Simpson integration for χ(z) = (c/H0) ∫0^z dz/E(z)
+function comovingDistanceMpc(z, H0, Om){
+  const n = 2048; // fine enough and still fast
+  const h = z / n;
+  let s = 0;
+  for(let i=0;i<=n;i++){
+    const zi = i*h;
+    const w = (i===0||i===n) ? 1 : (i%2 ? 4 : 2);
+    s += w / Ez(zi, Om);
+  }
+  const chi = (C_MS/1000) / H0 * (h/3) * s; // km/s / (km/s/Mpc) = Mpc
+  return chi; // Mpc
+}
+
+function recomputeDistances(){
+  const { H0, Om, zL, zS } = state.cosmo;
+  if(zS <= zL){ state.dist = { Dl:0, Ds:0, Dls:0, scale_sec_per_arcsec2:0 }; return; }
+
+  const chiL = comovingDistanceMpc(zL, H0, Om);
+  const chiS = comovingDistanceMpc(zS, H0, Om);
+
+  const Dl  = chiL / (1+zL);
+  const Ds  = chiS / (1+zS);
+  const Dls = (chiS - chiL) / (1+zS);
+
+  const DDelta_Mpc = (1+zL) * Dl * Ds / Dls;           // "time-delay distance" in Mpc
+  const DDelta_m   = DDelta_Mpc * MPC_TO_M;            // meters
+  const scale = (DDelta_m / C_MS) * (ASEC2RAD*ASEC2RAD); // seconds per (arcsec^2) of φ
+
+  state.dist = { Dl, Ds, Dls, scale_sec_per_arcsec2: scale };
+}
+
+// ---------------- Lens model: SIS + external shear ----------------
+function alphaSIS(x,y,b){ const r=Math.hypot(x,y); if(r<1e-9) return [0,0]; const f=b/r; return [f*x, f*y]; }
+function shearComponents(gamma, phi){ const c=Math.cos(2*phi), s=Math.sin(2*phi); return [gamma*c, gamma*s]; }
+function alphaShear(x,y,g1,g2){ return [g1*x + g2*y, g2*x - g1*y]; }
+
+function einsteinMassAndRadius(){
+  const { Dl, Ds, Dls } = state.dist;        // Mpc
+  const thetaE_arcsec = state.thetaE;        // arcsec (your UI unit)
+  if (!(Dl>0 && Ds>0 && Dls>0)) return { ME_solar: NaN, RE_kpc: NaN };
+
+  const thetaE_rad = thetaE_arcsec * ASEC2RAD;
+  const DDelta_Mpc = (1 + state.cosmo.zL) * Dl * Ds / Dls; // time-delay distance (not needed here)
+  // Use direct mass formula: M_E = (c^2 / 4G) * (Dl * Ds / Dls) * theta_E^2
+  const factor_Mpc = (Dl * Ds / Dls);        // Mpc
+  const factor_m   = factor_Mpc * MPC_TO_M;  // meters
+
+  const ME_kg = (C_MS*C_MS / (4*G_SI)) * factor_m * (thetaE_rad*thetaE_rad);
+  const ME_solar = ME_kg / M_SUN;
+
+  const RE_kpc = Dl * KPC_PER_MPC * thetaE_rad; // R_E = D_L * theta_E (kpc)
+
+  return { ME_solar, RE_kpc };
+}
+
+function jacobianA(x,y,b,g1,g2){
+  const r = Math.hypot(x,y);
+  let A11 = 1 - g1, A12 = -g2, A21 = -g2, A22 = 1 + g1; // I - Gamma
+  if(r>=1e-9){
+    const nx=x/r, ny=y/r; const f=b/r;
+    A11 -= f * (1 - nx*nx);
+    A22 -= f * (1 - ny*ny);
+    const off = f * (nx*ny);
+    A12 += off; A21 += off;
+  }
+  return [A11,A12,A21,A22];
+}
+function det2(a,b,c,d){return a*d - b*c}
+
+// Lens potential ψ = b r + 1/2 ( g1 (x^2 − y^2) + 2 g2 x y )
+function lensPotential(x, y, b, g1, g2){
+  const r = Math.hypot(x, y);
+  return b * r + 0.5 * ( g1*(x*x - y*y) + 2*g2*x*y );
+}
+
+// ---------------- World <-> Pixel ----------------
+function worldToPix(x,y,canvas){ const s=canvas.width, f=FOV; return [(x+f)/(2*f)*s, (1-(y+f)/(2*f))*s]; }
+function pixToWorld(u,v,canvas){ const s=canvas.width, f=FOV; return [u/s*(2*f)-f, (1-v/s)*(2*f)-f]; }
+
+// ---------------- Sérsic ----------------
+function bnOf(n){ return 2*n - 1/3 + 4/(405*n) + 46/(25515*n*n); }
+function sersicAt(betaX,betaY,src){
+  const dx=betaX-src.x0, dy=betaY-src.y0; const cp=Math.cos(src.pa), sp=Math.sin(src.pa);
+  const xp =  dx*cp + dy*sp; const yp = -dx*sp + dy*cp; // rotate into source frame
+  const m = Math.hypot(xp, yp/Math.max(1e-6,src.q));
+  const n=src.n, Re=Math.max(1e-6,src.Re), bn=bnOf(n);
+  const t = Math.pow(m/Re, 1/n);
+  return src.I0 * Math.exp(-bn*(t - 1));
+}
+
+// ---------------- Precompute beta and detA (depends only on lens + grid) ----------------
+function recomputeLensMaps(){
+  const N=state.res; const size=N*N; betaMap=new Float32Array(size*2); detAmap=new Float32Array(size);
+  const [g1,g2]=shearComponents(state.gamma, state.phi);
+  const f=FOV; let p=0, q=0;
+  for(let j=0;j<N;j++){
+    for(let i=0;i<N;i++){
+      const x=(i+0.5)/N*(2*f)-f; const y=(1-(j+0.5)/N)*(2*f)-f;
+      const aS=alphaSIS(x,y,state.thetaE), aG=alphaShear(x,y,g1,g2);
+      betaMap[p++] = x - aS[0] - aG[0];
+      betaMap[p++] = y - aS[1] - aG[1];
+      const [A11,A12,A21,A22]=jacobianA(x,y,state.thetaE,g1,g2);
+      detAmap[q++] = det2(A11,A12,A21,A22);
+    }
+  }
+}
+
+// ---------------- Time-delay τ(θ;β) (depends on lens + source center) ----------------
+function recomputeTauMap(){
+  const N = state.res;
+  if(!tauMap || tauMap.length !== N*N) tauMap = new Float32Array(N*N);
+
+  const [g1, g2] = shearComponents(state.gamma, state.phi);
+  const bx = state.src.x0, by = state.src.y0; // β = (x0, y0)
+  const f = FOV;
+
+  tauMin = Infinity; tauMax = -Infinity;
+  let t = 0;
+  for(let j=0;j<N;j++){
+    for(let i=0;i<N;i++){
+      const x=(i+0.5)/N*(2*f)-f; const y=(1-(j+0.5)/N)*(2*f)-f;
+      const psi = lensPotential(x, y, state.thetaE, g1, g2);
+      const dx = x - bx, dy = y - by;
+      const tau = 0.5*(dx*dx + dy*dy) - psi;
+      tauMap[t++] = tau;
+      if(tau<tauMin) tauMin=tau;
+      if(tau>tauMax) tauMax=tau;
+    }
+  }
+}
+
+// ---------------- Rendering ----------------
+function toneMap(I){ const k=state.expo; return Math.asinh(k*I)/Math.asinh(k*1.0); }
+
+function renderImage(){
+  const N=state.res; if(imgCanvas.width!==N){imgCanvas.width=N; imgCanvas.height=N}
+  const ctx=imgCtx; const img=ctx.createImageData(N,N); const data=img.data; const src=state.src;
+  for(let idx=0, p=0; p<N*N; p++){
+    const bx=betaMap[2*p], by=betaMap[2*p+1];
+    const I=sersicAt(bx,by,src);
+    const g = clamp(Math.floor(255*toneMap(I)),0,255);
+    data[idx++]=g; data[idx++]=g; data[idx++]=g; data[idx++]=255;
+  }
+  ctx.putImageData(img,0,0);
+  if(state.showCrit) drawCriticalCurveOn(imgCtx, imgCanvas);
+}
+
+function renderSourcePlane(){
+  const N=state.res; if(srcCanvas.width!==N){srcCanvas.width=N; srcCanvas.height=N}
+  const ctx=srcCtx; const img=ctx.createImageData(N,N); const data=img.data; const f=FOV; const src=state.src;
+  for(let j=0;j<N;j++){
+    for(let i=0;i<N;i++){
+      const x=(i+0.5)/N*(2*f)-f; const y=(1-(j+0.5)/N)*(2*f)-f;
+      const I=sersicAt(x,y,src);
+      const g = clamp(Math.floor(255*toneMap(I)),0,255);
+      const idx=4*(j*N+i); data[idx]=g; data[idx+1]=g; data[idx+2]=g; data[idx+3]=255;
+    }
+  }
+  ctx.putImageData(img,0,0);
+  drawCaustics();
+  drawSourceHandle();
+}
+
+// Cubehelix colormap (Dave Green 2011)
+// params: start=0.5, rotations=-1.5, hue=1.0 (standard)
+function cubehelix(t, start=0.5, rotations=-1.5, hue=1.0) {
+  const angle = 2 * Math.PI * (start/3 + rotations * t);
+  const amp   = hue * t * (1 - t) / 2.0;
+
+  const cosA = Math.cos(angle), sinA = Math.sin(angle);
+  let r = t + amp * (-0.14861 * cosA + 1.78277 * sinA);
+  let g = t + amp * (-0.29227 * cosA - 0.90649 * sinA);
+  let b = t + amp * (+1.97294 * cosA);
+
+  return [
+    clamp(Math.floor(r * 255), 0, 255),
+    clamp(Math.floor(g * 255), 0, 255),
+    clamp(Math.floor(b * 255), 0, 255)
+  ];
+}
+
+function fmtTimeDays(days){
+  const ad = Math.abs(days);
+  if (ad < 1/24/60) return `${(days*86400).toFixed(1)} s`;
+  if (ad < 1/24)    return `${(days*1440).toFixed(1)} min`;
+  if (ad < 2)       return `${(days*24).toFixed(1)} h`;
+  return `${days.toFixed(2)} d`;
+}
+
+function tauToDays(phi_arcsec2){
+  const s = state.dist.scale_sec_per_arcsec2 || 0;
+  return (s * phi_arcsec2) / 86400; // seconds → days
+}
+
+function drawTDScaleBarCubehelix(maxDays){
+  const N   = tdCanvas.width;
+  const ctx = tdCtx;
+
+  // bar geometry
+  const pad = Math.round(N*0.04);
+  const bw  = Math.round(N*0.6);
+  const bh  = Math.max(10, Math.round(N*0.03));
+  const x0  = pad;
+  const y0  = N - pad - bh - 22;
+
+  ctx.save();
+
+  // backplate
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  const r = 8;
+  ctx.beginPath();
+  ctx.moveTo(x0-r, y0-r);
+  ctx.arcTo(x0+bw+r, y0-r, x0+bw+r, y0+bh+r, r);
+  ctx.arcTo(x0+bw+r, y0+bh+r, x0-r, y0+bh+r, r);
+  ctx.arcTo(x0-r, y0+bh+r, x0-r, y0-r, r);
+  ctx.arcTo(x0-r, y0-r, x0+bw+r, y0-r, r);
+  ctx.closePath();
+  ctx.fill();
+
+  // gradient using the SAME mapping as renderTimeDelay:
+  //   t_norm = (tau - lo)/denom, clamped, then t = 1 - t_norm
+  // so left=0→t=1, right=max→t=0
+  const grad = document.createElement('canvas');
+  grad.width = bw; grad.height = 1;
+  const gctx = grad.getContext('2d');
+  const row  = gctx.createImageData(bw, 1);
+
+  for (let i=0; i<bw; i++){
+    const tNorm = i/(bw-1);   // 0..1 across the bar
+    const t     = 1 - tNorm;  // invert, same as your image
+    const [r,g,b] = cubehelix(t); // your existing function
+    const k = 4*i;
+    row.data[k+0]=r; row.data[k+1]=g; row.data[k+2]=b; row.data[k+3]=255;
+  }
+  gctx.putImageData(row, 0, 0);
+
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(grad, x0, y0, bw, bh);
+
+  // labels
+  ctx.fillStyle = 'white';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.font = `${Math.max(11, Math.round(N*0.035))}px ui-sans-serif`;
+  ctx.fillText('0', x0, y0+bh+4);
+  ctx.fillText(fmtTimeDays(maxDays), x0+bw, y0+bh+4);
+
+  ctx.restore();
+}
+
+// one source of truth (as before), unchanged except we’ll use tau later
+function getLensedImagesSorted(useExtended=false){
+  const pts = useExtended ? findImagePositionsExtended(2.0) : findImagePositions();
+  const imgs = pts.map(([x,y])=>{
+    const det = detAAt(x,y);
+    const muSigned = (Math.abs(det) < 1e-12) ? (det>0 ? 1e12 : -1e12) : 1/det;
+    return {
+      x, y,
+      tau: tauAt(x,y),                // φ(θ;β) in arcsec^2
+      det,
+      mu: muSigned,
+      muAbs: Math.abs(muSigned),
+      parity: det > 0 ? 'positive' : 'negative (saddle)'
+    };
+  });
+  imgs.sort((a,b)=> a.tau - b.tau);
+  const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  imgs.forEach((im,i)=> im.label = labels[i % labels.length]);
+  return imgs;
+}
+
+function drawImageLabels(){
+  const imgs = getLensedImagesSorted(false); // or true to use extended FoV for labeling
+  if (!imgs.length) return;
+
+  tdCtx.save();
+  tdCtx.font = "24px sans-serif";
+  tdCtx.textAlign = "center";
+  tdCtx.textBaseline = "middle";
+
+  imgs.forEach((im)=>{
+    const [u,v] = worldToPix(im.x, im.y, tdCanvas);
+
+    // dot
+    tdCtx.beginPath();
+    tdCtx.arc(u, v, 5, 0, TAU);
+    tdCtx.fillStyle = "#ffcc00";
+    tdCtx.fill();
+    tdCtx.strokeStyle = "black";
+    tdCtx.lineWidth = 1.4;
+    tdCtx.stroke();
+
+    // label
+    tdCtx.fillStyle = "black";
+    tdCtx.fillText(im.label, u, v - 14);
+  });
+
+  tdCtx.restore();
+}
+
+function renderTimeDelay(){
+  const N = state.res;
+  if (tdCanvas.width !== N){ tdCanvas.width = N; tdCanvas.height = N; }
+  const ctx = tdCtx;
+  const img = ctx.createImageData(N, N);
+  const data = img.data;
+
+  // Central reference at θ = (0,0)
+  const tauCenter = tauAt(0.0, 0.0);
+
+  // Primary normalization: [global min, center]
+  let lo = tauMin;
+  let hi = tauCenter;
+  let denom = hi - lo;
+
+  // Fallback if center isn't above global min
+  if (!(denom > 1e-12)) {
+    lo = tauMin;
+    hi = tauMax;
+    denom = (hi > lo) ? (hi - lo) : 1;
+  }
+
+  for (let p=0, idx=0; p<N*N; p++){
+    let t = (tauMap[p] - lo) / denom;   // 0..1
+    t = clamp(t, 0, 1);
+    t = 1 - t;                          // invert: white at left, black at right
+    const [r,g,b] = cubehelix(t);
+    data[idx++] = r;
+    data[idx++] = g;
+    data[idx++] = b;
+    data[idx++] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+
+  overlaySaddleContours();
+  drawImageLabels();
+
+  // -------- Cubehelix colorbar (0 → max) that exactly matches the mapping --------
+  const pad = Math.round(N*0.06);     // small side margin
+  const bw  = N - 2*pad;              // bar spans full width minus margins
+  const bh  = Math.max(10, Math.round(N*0.03));
+  const x0  = pad;
+  const y0  = N - pad - bh - 10;      // leave space for ticks + labels
+
+  // Build a 1-row gradient using the same t = 1 - ((τ - lo)/denom) mapping
+  const row = ctx.createImageData(bw, 1);
+  for (let i=0; i<bw; i++){
+    const tNorm = i/(bw-1);
+    const t     = 1 - tNorm;                // left=0→t=1 (white), right=max→t=0 (black)
+    const [r,g,b] = cubehelix(t);
+    const k = 4*i;
+    row.data[k+0]=r; row.data[k+1]=g; row.data[k+2]=b; row.data[k+3]=255;
+  }
+
+  // Paint that row into a temporary canvas and stretch it to bar height
+  const grad = document.createElement('canvas');
+  grad.width = bw; grad.height = 1;
+  grad.getContext('2d').putImageData(row, 0, 0);
+
+  // Backplate for readability
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(x0-8, y0-8, bw+16, bh+24);
+
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(grad, x0, y0, bw, bh);
+
+  // ---- Ticks & labels on the colorbar ----
+  const maxDays = tauToDays(denom);      // same normalization as the image
+  const tickFracs = maxDays >= 2 ? [0, 0.25, 0.5, 0.75, 1] : [0, 0.5, 1];
+
+  
+  ctx.strokeStyle = 'white';
+  ctx.lineWidth = 1;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.font = `${Math.max(18, Math.round(N*0.035))}px ui-sans-serif`;
+
+  tickFracs.forEach(fr => {
+    const x = x0 + fr * bw;
+    // tick mark
+    ctx.beginPath();
+    ctx.moveTo(x, y0 + bh);
+    ctx.lineTo(x, y0 + bh + 6);
+    ctx.stroke();
+    // label
+    const labelDays = fr * maxDays;
+    ctx.fillStyle = 'white';
+    ctx.fillText(fmtTimeDays(labelDays), x, y0 + bh + 8);
+  });
+}
+
+function drawSourceHandle(){
+  const [u,v]=worldToPix(state.src.x0,state.src.y0,srcCanvas); const ctx=srcCtx; ctx.save();
+  ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(u,v,3,0,TAU); ctx.fill(); ctx.restore();
+}
+
+// Critical curve: detA=0 via marching squares
+function marchingSquaresZero(field,w,h){
+  const segs=[]; const val=(i,j)=>field[clamp(j,0,h-1)*w + clamp(i,0,w-1)];
+  for(let j=0;j<h-1;j++) for(let i=0;i<w-1;i++){
+    const f00=val(i,j), f10=val(i+1,j), f01=val(i,j+1), f11=val(i+1,j+1);
+    const s00=f00>0, s10=f10>0, s01=f01>0, s11=f11>0; const code=(s00?1:0)|(s10?2:0)|(s11?4:0)|(s01?8:0);
+    if(code===0||code===15) continue;
+    const t=(a,b)=>{const da=a-b; return Math.abs(da)<1e-12?0.5:(0-b)/da};
+    const pL=[i+0, j + t(f00,f01)], pR=[i+1, j + t(f10,f11)], pT=[i + t(f00,f10), j+0], pB=[i + t(f01,f11), j+1];
+    switch(code){
+      case 1: case 14: segs.push([...pT,...pL]); break;
+      case 2: case 13: segs.push([...pR,...pT]); break;
+      case 3: case 12: segs.push([...pR,...pL]); break;
+      case 4: case 11: segs.push([...pB,...pR]); break;
+      case 5: segs.push([...pT,...pR]); segs.push([...pL,...pB]); break;
+      case 6: case 9: segs.push([...pT,...pB]); break;
+      case 7: case 8: segs.push([...pL,...pB]); break;
+      case 10: segs.push([...pT,...pL]); segs.push([...pR,...pB]); break;
+    }
+  }
+  return segs;
+}
+
+function drawCriticalCurveOn(ctx, canvas){
+  ctx.save(); ctx.lineWidth=1.5; ctx.strokeStyle='rgb(210, 86, 98)';
+  const segs=marchingSquaresZero(detAmap,state.res,state.res); const s=state.res, f=FOV;
+  ctx.beginPath();
+  for(const seg of segs){
+    const [x1,y1,x2,y2]=seg;
+    const gx1=(x1+0.5)/s*(2*f)-f, gy1=(1-(y1+0.5)/s)*(2*f)-f;
+    const gx2=(x2+0.5)/s*(2*f)-f, gy2=(1-(y2+0.5)/s)*(2*f)-f;
+    const [px1,py1]=worldToPix(gx1,gy1,canvas);
+    const [px2,py2]=worldToPix(gx2,gy2,canvas);
+    ctx.moveTo(px1,py1); ctx.lineTo(px2,py2);
+  }
+  ctx.stroke(); 
+  
+  // --- draw a small plus sign at (0,0) ---
+  const [cx,cy] = worldToPix(0,0,canvas);
+  ctx.beginPath();
+  const r = 6;   // half-length of plus arms in px
+  ctx.moveTo(cx-r, cy); ctx.lineTo(cx+r, cy);
+  ctx.moveTo(cx, cy-r); ctx.lineTo(cx, cy+r);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+// Caustics (source plane): astroid + pseudocaustic
+function drawCaustics(){
+  const ctx=srcCtx; const b=state.thetaE, g=state.gamma, phi=state.phi; const N=256;
+  if(state.showAstroid && g>0){
+    const betaP = 2*b*g/(1+g), betaM = 2*b*g/(1-g);
+    ctx.save(); ctx.lineWidth=1.6; ctx.strokeStyle= 'rgba(245,158,11,1)'; ctx.beginPath();
+    for(let i=0;i<=N;i++){
+      const t=i/N*TAU; const cx=Math.cos(t), sx=Math.sin(t);
+      let bx = betaP * Math.pow(cx,3); let by = betaM * Math.pow(sx,3);
+      const c=Math.cos(phi), s=Math.sin(phi); const rx=c*bx - s*by, ry=s*bx + c*by;
+      const [px,py]=worldToPix(rx,ry,srcCanvas); if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    }
+    ctx.stroke(); ctx.restore();
+  }
+  if(state.showPseudo){
+    const steps=256; ctx.save(); ctx.setLineDash([6,5]); ctx.lineWidth=1.2; ctx.strokeStyle='#109fbb'; ctx.beginPath();
+    for(let i=0;i<=steps;i++){
+      const t=i/steps*TAU; const x=b*Math.cos(t), y=b*Math.sin(t); const [px,py]=worldToPix(x,y,srcCanvas); if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    }
+    ctx.stroke(); ctx.restore();
+  }
+}
+
+// ================= Saddle points + τ-contours through saddles =================
+
+// Helpers to access β(θ) and A(θ)
+function betaOf(x,y){
+  const [g1,g2] = shearComponents(state.gamma, state.phi);
+  const aS = alphaSIS(x,y,state.thetaE);
+  const aG = alphaShear(x,y,g1,g2);
+  return [ x - aS[0] - aG[0],  y - aS[1] - aG[1] ];
+}
+function detAAt(x,y){
+  const [g1,g2] = shearComponents(state.gamma, state.phi);
+  const [A11,A12,A21,A22] = jacobianA(x,y,state.thetaE,g1,g2);
+  return det2(A11,A12,A21,A22);
+}
+
+// Build zero-contour segments for fx=0 or fy=0 directly from betaMap
+function zeroContoursForFxFy(isFx){
+  const N = state.res;
+  const field = new Float32Array(N*N);
+  const bx0 = state.src.x0, by0 = state.src.y0;
+  for(let p=0, j=0; j<N; j++){
+    for(let i=0; i<N; i++, p++){
+      const bx = betaMap[2*p], by = betaMap[2*p+1];
+      field[p] = isFx ? (bx - bx0) : (by - by0);
+    }
+  }
+  return marchingSquaresZero(field, N, N); // segments in grid coords (cell space)
+}
+
+// Segment intersection in grid space
+function segIntersect(ax1,ay1,ax2,ay2, bx1,by1,bx2,by2){
+  const dax=ax2-ax1, day=ay2-ay1, dbx=bx2-bx1, dby=by2-by1;
+  const denom = dax*dby - day*dbx;
+  if (Math.abs(denom) < 1e-9) return null;
+  const t = ((bx1-ax1)*dby - (by1-ay1)*dbx) / denom;
+  const u = ((bx1-ax1)*day - (by1-ay1)*dax) / denom;
+  if(t<=0 || t>=1 || u<=0 || u>=1) return null;
+  return [ax1 + t*dax, ay1 + t*day]; // intersection in grid coords
+}
+
+// Convert grid coords (cell space) -> world coords
+function gridToWorld(gx, gy){
+  const s = state.res, f = FOV;
+  const x = ( (gx+0.5)/s )*(2*f) - f;
+  const y = ( 1 - (gy+0.5)/s )*(2*f) - f;
+  return [x,y];
+}
+
+// 2×2 linear solve
+function solve2(a,b,c,d, fx,fy){
+  const det = a*d - b*c;
+  if(Math.abs(det)<1e-14) return null;
+  const ix = ( d*fx - b*fy)/det;
+  const iy = (-c*fx + a*fy)/det;
+  return [ix,iy];
+}
+
+// Newton refine a root of F(θ)=β(θ)-β from an initial world guess
+function newtonRefine(theta0){
+  const bx0 = state.src.x0, by0 = state.src.y0;
+  let x=theta0[0], y=theta0[1];
+  for(let k=0;k<20;k++){
+    const [bx,by] = betaOf(x,y);
+    const Fx = bx - bx0, Fy = by - by0;
+    const err = Math.hypot(Fx,Fy);
+    if(err < 1e-8) break;
+
+    const [g1,g2] = shearComponents(state.gamma, state.phi);
+    const [A11,A12,A21,A22] = jacobianA(x,y,state.thetaE,g1,g2); // J = ∂β/∂θ
+    const step = solve2(A11,A12,A21,A22, Fx, Fy); // solve J * delta = F
+    if(!step) break;
+    x -= step[0];
+    y -= step[1];
+
+    // keep within FOV with a tiny margin
+    x = clamp(x, -FOV+1e-6, FOV-1e-6);
+    y = clamp(y, -FOV+1e-6, FOV-1e-6);
+    if(Math.hypot(step[0],step[1]) < 1e-9) break;
+  }
+  return [x,y];
+}
+
+// Find candidate image positions by contour intersections, then refine
+function findImagePositions(){
+  const segsFx = zeroContoursForFxFy(true);
+  const segsFy = zeroContoursForFxFy(false);
+  const seeds = [];
+
+  // brute-force intersect (segs are modest in count for N<=1024)
+  for(const a of segsFx){
+    const [ax1,ay1,ax2,ay2] = a;
+    for(const b of segsFy){
+      const [bx1,by1,bx2,by2] = b;
+      const pt = segIntersect(ax1,ay1,ax2,ay2, bx1,by1,bx2,by2);
+      if(pt){
+        const w = gridToWorld(pt[0], pt[1]);
+        seeds.push(w);
+      }
+    }
+  }
+
+  // refine & dedupe
+  const refined = [];
+  const eps = 2e-3; // ~ milliarcsec scale in θ_E units if FOV~few
+  for(const s of seeds){
+    const r = newtonRefine(s);
+    // dedupe near-duplicates
+    let keep = true;
+    for(const u of refined){
+      if(Math.hypot(u[0]-r[0], u[1]-r[1]) < eps){ keep=false; break; }
+    }
+    if(keep) refined.push(r);
+  }
+  return refined;
+}
+
+// Compute τ(θ;β) directly (not via tauMap indices)
+function tauAt(x,y){
+  const [g1,g2] = shearComponents(state.gamma, state.phi);
+  const psi = lensPotential(x, y, state.thetaE, g1, g2);
+  const dx = x - state.src.x0, dy = y - state.src.y0;
+  return 0.5*(dx*dx + dy*dy) - psi;
+}
+
+// Return only saddle points (detA<0)
+function findSaddles(){
+  const imgs = findImagePositions();
+  const saddles = [];
+  for(const [x,y] of imgs){
+    const det = detAAt(x,y);
+    if(det < 0){
+      saddles.push({x,y,tau: tauAt(x,y)});
+    }
+  }
+  // Most SIS+shear configs give 0,1, or 2 saddles
+  return saddles;
+}
+
+// Draw τ-contour for a given τ0 by marching squares on (tauMap - τ0)
+function drawTauContourLevel(ctx, canvas, tau0){
+  const N = state.res;
+  const field = new Float32Array(N*N);
+  for(let i=0;i<N*N;i++) field[i] = tauMap[i] - tau0;
+  const segs = marchingSquaresZero(field, N, N);
+  ctx.save();
+  ctx.lineWidth = 1.3;
+  ctx.strokeStyle = 'rgba(236, 72, 153, 1)'; // pink-ish for saddle τ-contours
+  ctx.beginPath();
+  const s=state.res, f=FOV;
+  for(const seg of segs){
+    const [x1,y1,x2,y2]=seg;
+    const gx1=(x1+0.5)/s*(2*f)-f, gy1=(1-(y1+0.5)/s)*(2*f)-f;
+    const gx2=(x2+0.5)/s*(2*f)-f, gy2=(1-(y2+0.5)/s)*(2*f)-f;
+    const [px1,py1]=worldToPix(gx1,gy1,canvas);
+    const [px2,py2]=worldToPix(gx2,gy2,canvas);
+    ctx.moveTo(px1,py1); ctx.lineTo(px2,py2);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+// High-level: find saddles and overlay their τ-contours (0, 1, or 2)
+function overlaySaddleContours(){
+  const saddles = findSaddles();
+  if(!saddles.length) return;
+
+  // draw small cross markers at saddles (optional)
+  tdCtx.save();
+  tdCtx.strokeStyle = 'rgba(255,255,255,.9)';
+  tdCtx.lineWidth = 1;
+  for(const s of saddles){
+    const [u,v] = worldToPix(s.x, s.y, tdCanvas);
+    tdCtx.beginPath();
+    tdCtx.moveTo(u-4, v); tdCtx.lineTo(u+4, v);
+    tdCtx.moveTo(u, v-4); tdCtx.lineTo(u, v+4);
+    tdCtx.stroke();
+  }
+  tdCtx.restore();
+
+  // draw τ-level contours through each saddle
+  for(const s of saddles){
+    drawTauContourLevel(tdCtx, tdCanvas, s.tau);
+  }
+}
+
+// ---------- Total magnification (point source at current β) ----------
+function computePointMagnification(){
+  const images = getLensedImagesSorted(false); // or true to count off-screen images
+  const total = images.reduce((s, im)=> s + im.muAbs, 0);
+  return { total, images };
+}
+
+
+// Read file input
+document.getElementById('fitsFile')?.addEventListener('change', async (e)=>{
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const buf = await file.arrayBuffer();
+  try{
+    const img = parseFITS(buf);                 // {data,width,height,hdr}
+    applyFITSWCS(img.hdr, img.width, img.height);
+    await buildFITSBitmap(img);                 // async; Safari-safe inside
+    fitsCtx = setupCanvas(fitsCanvas);
+    renderFITSCanvas();                         // draw immediately
+  }catch(err){
+    console.error(err);
+    alert('Could not read FITS (need 2-D primary HDU). Details in console.');
+  }
+});
+
+// Parse a very standard FITS primary HDU (SIMPLE, NAXIS=2)
+function parseFITS(arrayBuffer){
+  const dv = new DataView(arrayBuffer);
+  const bytes = new Uint8Array(arrayBuffer);
+  let pos = 0;
+
+  const getCard = () => {
+    const s = new TextDecoder("ascii").decode(bytes.subarray(pos, pos+80));
+    pos += 80; return s;
+  };
+
+  const hdr = new Map();
+  let bitpix=null, naxis=null, naxis1=null, naxis2=null, bscale=1, bzero=0;
+  let seenEND = false;
+
+  while(true){
+    const card = getCard();
+    const key  = card.slice(0,8).trim();
+    if (key === 'END'){ seenEND = true; break; }
+    hdr.set(key, card.slice(10,80).trim());
+    const num = (k)=> hdr.has(k) ? Number(String(hdr.get(k)).split('/')[0].trim()) : undefined;
+    bitpix = num('BITPIX') ?? bitpix;
+    naxis  = num('NAXIS')  ?? naxis;
+    naxis1 = num('NAXIS1') ?? naxis1;
+    naxis2 = num('NAXIS2') ?? naxis2;
+    bscale = num('BSCALE') ?? bscale;
+    bzero  = num('BZERO')  ?? bzero;
+  }
+  if (!seenEND) throw new Error('FITS header missing END.');
+  if (naxis !== 2 || !naxis1 || !naxis2) throw new Error('Only 2-D primary images supported.');
+  if (![8,16,32,-32,-64].includes(bitpix)) throw new Error('Unsupported BITPIX: '+bitpix);
+
+  const headerBytes = Math.ceil(pos/2880)*2880;
+  pos = headerBytes;
+
+  const W = naxis1, H = naxis2, N = W*H;
+  const out = new Float32Array(N);
+  let read;
+  switch(bitpix){
+    case 8:  read = (i)=> bytes[pos+i]; break;
+    case 16: read = (i)=> dv.getInt16(pos+i, false); break;
+    case 32: read = (i)=> dv.getInt32(pos+i, false); break;
+    case -32: read = (i)=> dv.getFloat32(pos+i, false); break;
+    case -64: read = (i)=> dv.getFloat64(pos+i, false); break;
+  }
+  const stride = (bitpix===8) ? 1 :
+                 (Math.abs(bitpix)===16) ? 2 :
+                 (Math.abs(bitpix)===32) ? 4 : 8;
+  for(let i=0;i<N;i++){
+    out[i] = bscale * read(i*stride) + bzero;
+  }
+  return { data: out, width: W, height: H, hdr };
+}
+
+// Percentile helper for stretch
+function percentile(arr, p){
+  const a = Array.from(arr);
+  a.sort((x,y)=>x-y);
+  const idx = Math.min(a.length-1, Math.max(0, Math.floor((p/100)*a.length)));
+  return a[idx];
+}
+
+// Build a cached ImageBitmap with asinh stretch
+async function buildFITSBitmap({data, width, height}){
+  state.fits.data = data; state.fits.width = width; state.fits.height = height;
+
+  // asinh stretch with 0.5–99.5% clip
+  const lo = percentile(data, 0.5), hi = percentile(data, 99.5);
+  const k = 2.5, scale = 1/Math.max(1e-12, hi-lo);
+  const img = new ImageData(width, height), dd = img.data;
+
+  for(let y=0;y<height;y++){
+    const sy = height-1-y;
+    for(let x=0;x<width;x++){
+      const v = data[sy*width + x];
+      const t = Math.max(0, Math.min(1, (v-lo)*scale));
+      const g = Math.asinh(k*t)/Math.asinh(k);
+      const G = (g*255)|0;
+      const i = 4*(y*width + x);
+      dd[i]=G; dd[i+1]=G; dd[i+2]=G; dd[i+3]=255;
+    }
+  }
+  if ('createImageBitmap' in window){
+    try { state.fits.imageBitmap = await createImageBitmap(img); return; }
+    catch(_) {}
+  }
+  state.fits.imageBitmap = img;
+}
+
+// Draw cached FITS to the square canvas, preserving aspect, on demand / on resize
+function renderFITSCanvas(){
+  if (!fitsCanvas || !state.fits.imageBitmap) return;
+
+  const ctx = fitsCtx;
+  const N = fitsCanvas.width;    // device-pixel backing size (square)
+  ctx.save();
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0,0,N,N);
+
+  // Source bitmap (ImageBitmap or ImageData)
+  const bm = state.fits.imageBitmap;
+
+  // Ensure we have a drawable source (convert ImageData -> canvas)
+  let src = bm;
+  let srcW = state.fits.width, srcH = state.fits.height;
+
+  if (bm instanceof ImageData){
+    const off = document.createElement('canvas');
+    off.width = srcW; off.height = srcH;
+    off.getContext('2d').putImageData(bm, 0, 0);
+    src = off;              // <— use offscreen canvas as draw source
+  } else {
+    // Prefer intrinsic size from ImageBitmap if available
+    if (typeof bm.width === 'number')  srcW = bm.width;
+    if (typeof bm.height === 'number') srcH = bm.height;
+  }
+
+  // Canvas px per arcsec from current FoV (matches your other panels)
+  const pxPerArcsec = N / (2 * FOV);
+
+  // Use WCS scale if known; otherwise infer so the longer side spans the FoV
+  let scale_as = state.fits.scale_as_per_pix;          // arcsec / pixel
+  if (!scale_as){
+    scale_as = (2 * FOV) / Math.max(srcW, srcH);       // inferred
+    if (fitsScaleLabel) fitsScaleLabel.textContent = `~${scale_as.toFixed(3)}`;
+  }
+
+  // Map: 1 FITS px → S canvas px
+  const S = pxPerArcsec * scale_as;
+  // center at middle pixel; allow user offsets (in FITS px)
+  const cx  = (srcW - 1) / 2 + (state.fits.offPx || 0);
+  const cy  = (srcH - 1) / 2 + (state.fits.offPy || 0);
+
+  // rotation (you currently force 0 in applyFITSWCS; keep generic here)
+  const ang = state.fits.rot_rad || 0;
+
+  // Draw, centered on (cx,cy), with current FoV scale
+  ctx.translate(N/2, N/2);
+  ctx.rotate(-ang);
+  ctx.imageSmoothingEnabled = true;
+  ctx.scale(S, S);
+  ctx.drawImage(src, -cx, -cy);
+
+  // Draw, centered on CRPIX, rotated per WCS, scaled to current FoV
+  //ctx.translate(N/2, N/2);
+  //ctx.rotate(-ang);
+  //ctx.imageSmoothingEnabled = true;
+  //ctx.scale(S, S);
+  //ctx.drawImage(src, -cx, -cy);
+
+  ctx.restore();
+
+  // Optional overlay
+  if (state.showCrit && detAmap){
+    drawCriticalCurveOn(fitsCtx, fitsCanvas);
+  }
+}
+
+
+
+
+function fmt(x, k=3){ return (Math.abs(x) >= 1e6) ? x.toExponential(2) : x.toFixed(k); }
+
+function updateStatsPanel(){
+  const el = document.getElementById('statsContent');
+  if(!el) return;
+
+  const images = getLensedImagesSorted(false); // stick to visible FoV list
+  const totalMag = images.reduce((s, im)=> s + im.muAbs, 0);
+
+  // relative to earliest (A)
+  const tau0 = images.length ? images[0].tau : 0;
+  const delaysDays = images.map(im => tauToDays(im.tau - tau0));
+
+  let html = '';
+  html += `<div><b>Total magnification</b>: ${fmt(totalMag, 3)}</div>`;
+
+  // Show cosmology + distance factor
+  const { zL, zS, H0, Om } = state.cosmo;
+  const { Dl, Ds, Dls } = state.dist;
+  html += `<div style="margin-top:6px;color:var(--muted)">z<sub>L</sub>=${fmt(zL,2)}, z<sub>S</sub>=${fmt(zS,2)}, H<sub>0</sub>=${fmt(H0,1)} km/s/Mpc, Ω<sub>m</sub>=${fmt(Om,2)}</div>`;
+  html += `<div style="color:var(--muted)">D<sub>L</sub>=${fmt(Dl,2)} Mpc, D<sub>S</sub>=${fmt(Ds,2)} Mpc, D<sub>LS</sub>=${fmt(Dls,2)} Mpc</div>`;
+
+  const { ME_solar, RE_kpc } = einsteinMassAndRadius();
+  html += `<div><b>Einstein mass</b>: ${isFinite(ME_solar) ? fmt(ME_solar,3) : '—'} M&#9737;</div>`;
+  html += `<div><b>Einstein radius</b>: ${isFinite(RE_kpc) ? fmt(RE_kpc,3) : '—'} kpc</div>`;
+  // Images table
+  html += `<div style="margin-top:8px;color:var(--muted)">
+    Images ordered by time delay (A = earliest = 0 days):
+  </div>`;
+
+  html += `<table style="margin-top:6px;width:100%;border-collapse:collapse;font-size:12px">
+    <thead style="background:rgba(255,255,255,0.05)">
+      <tr>
+        <th style="text-align:left;padding:4px">Img</th>
+        <th style="text-align:right;padding:4px">x</th>
+        <th style="text-align:right;padding:4px">y</th>
+        <th style="text-align:right;padding:4px">μ</th>
+        <th style="text-align:right;padding:4px">Δt</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  images.forEach((im, i)=>{
+    html += `<tr>
+      <td style="padding:4px"><b>${im.label}</b></td>
+      <td style="text-align:right;padding:4px">${fmt(im.x)}</td>
+      <td style="text-align:right;padding:4px">${fmt(im.y)}</td>
+      <td style="text-align:right;padding:4px">${fmt(im.mu)}</td>
+      <td style="text-align:right;padding:4px">${fmt(delaysDays[i],4)} d</td>
+    </tr>`;
+  });
+
+  html += `</tbody></table>`;
+
+  el.innerHTML = html;
+}
+
+// ---------------- Interaction: drag source center ----------------
+let dragging=false; let dragDX=0, dragDY=0;
+
+function clientToCanvas(e, canvas){
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const u = (e.clientX - rect.left) * scaleX;
+  const v = (e.clientY - rect.top) * scaleY;
+  return [u, v];
+}
+
+srcCanvas.addEventListener('pointerdown', e=>{
+  e.preventDefault();
+  const [u,v] = clientToCanvas(e, srcCanvas);
+  const [cx,cy] = worldToPix(state.src.x0, state.src.y0, srcCanvas);
+  const hit = Math.hypot(u-cx, v-cy) <= 16; // only start drag if clicking near centroid
+  if(!hit) return;
+  dragging = true;
+  srcCanvas.setPointerCapture(e.pointerId);
+  const [wx, wy] = pixToWorld(u, v, srcCanvas);
+  dragDX = wx - state.src.x0;
+  dragDY = wy - state.src.y0;
+});
+
+srcCanvas.addEventListener('pointermove', e=>{
+  if(!dragging) return;
+  const [u,v] = clientToCanvas(e, srcCanvas);
+  const [wx, wy] = pixToWorld(u, v, srcCanvas);
+  state.src.x0 = clamp(wx - dragDX, -FOV, FOV);
+  state.src.y0 = clamp(wy - dragDY, -FOV, FOV);
+  setX0(state.src.x0, false);
+  setY0(state.src.y0, false);
+  renderSourcePlane();
+  renderImage();
+  recomputeTauMap();
+  renderTimeDelay();
+  updateStatsPanel();
+});
+
+function endDrag(e){ if(!dragging) return; dragging=false; try{ srcCanvas.releasePointerCapture(e.pointerId); }catch(_){} }
+srcCanvas.addEventListener('pointerup', endDrag);
+srcCanvas.addEventListener('pointerleave', endDrag);
+srcCanvas.addEventListener('pointercancel', endDrag);
+
+
+// ------------- Drag the FITS layer to reposition it -------------
+let draggingFITS = false;
+let lastU = 0, lastV = 0;
+
+// convert a canvas-pixel delta to FITS-pixel delta, given current FoV and rotation
+function canvasDeltaToFitsPx(duCanvas, dvCanvas){
+  const N = fitsCanvas.width;
+  const pxPerArcsec = N / (2 * FOV);
+  // current FITS px -> canvas px scale (same S you use in render)
+  let scale_as = state.fits.scale_as_per_pix;
+  const srcW = state.fits.width, srcH = state.fits.height;
+  if (!Number.isFinite(scale_as) || scale_as <= 0){
+    scale_as = (2 * FOV) / Math.max(srcW, srcH);
+  }
+  const S = pxPerArcsec * scale_as;  // canvas px per FITS px
+
+  // account for rotation: drawing uses rotate(-ang), so inverse is +ang
+  const ang = state.fits.rot_rad || 0;
+  const ca = Math.cos(ang), sa = Math.sin(ang);
+
+  // [d_ix, d_iy] = R(+ang) * [duCanvas, dvCanvas] / S
+  const d_ix = ( ca*duCanvas - sa*dvCanvas) / S;
+  const d_iy = ( sa*duCanvas + ca*dvCanvas) / S;
+  return [d_ix, d_iy];
+}
+
+fitsCanvas.addEventListener('pointerdown', (e)=>{
+  e.preventDefault();
+  draggingFITS = true;
+  fitsCanvas.setPointerCapture(e.pointerId);
+  const rect = fitsCanvas.getBoundingClientRect();
+  lastU = (e.clientX - rect.left) * (fitsCanvas.width  / rect.width);
+  lastV = (e.clientY - rect.top)  * (fitsCanvas.height / rect.height);
+});
+
+fitsCanvas.addEventListener('pointermove', (e)=>{
+  if (!draggingFITS) return;
+  const rect = fitsCanvas.getBoundingClientRect();
+  const u = (e.clientX - rect.left) * (fitsCanvas.width  / rect.width);
+  const v = (e.clientY - rect.top)  * (fitsCanvas.height / rect.height);
+  const du = u - lastU, dv = v - lastV;
+  lastU = u; lastV = v;
+
+  const [dPx, dPy] = canvasDeltaToFitsPx(du, dv);
+  state.fits.offPx -= dPx;
+  state.fits.offPy -= dPy;
+
+  renderFITSCanvas();   // live update
+});
+
+function endFITSDrag(e){
+  if (!draggingFITS) return;
+  draggingFITS = false;
+  try { fitsCanvas.releasePointerCapture(e.pointerId); } catch (_) {}
+}
+fitsCanvas.addEventListener('pointerup', endFITSDrag);
+fitsCanvas.addEventListener('pointerleave', endFITSDrag);
+fitsCanvas.addEventListener('pointercancel', endFITSDrag);
+
+// Double-click to reset the offset to center
+fitsCanvas.addEventListener('dblclick', ()=>{
+  state.fits.offPx = 0;
+  state.fits.offPy = 0;
+  renderFITSCanvas();
+});
+
+
+
+
+
+// ---------------- UI bindings ----------------
+function bindRangeNum(idR,idN,setter){
+  const r=ui(idR), n=ui(idN);
+  const set=(v, apply=true)=>{ r.value=String(v); n.value=String(v); if(apply && typeof setter==='function'){ setter(parseFloat(v)); } };
+  r.addEventListener('input',()=>{ const v=parseFloat(r.value); n.value=r.value; if(typeof setter==='function') setter(v); });
+  n.addEventListener('input',()=>{ const v=parseFloat(n.value); r.value=n.value; if(typeof setter==='function') setter(v); });
+  return set;
+}
+
+const setThetaE = bindRangeNum('thetaE','thetaE_num', v=>{ state.thetaE=v; fullRecompute(); });
+const setGamma  = bindRangeNum('gamma','gamma_num', v=>{ state.gamma=v; fullRecompute(); });
+const setPhi    = bindRangeNum('phi','phi_num', v=>{ state.phi=toRad(v); fullRecompute(); });
+const setRes    = bindRangeNum('res','res_num', v=>{ state.res=Math.round(v); fullRecompute(); renderFITSCanvas();});
+const setFOV = bindRangeNum('fov','fov_num', v=>{ FOV = Math.max(0.1, v); state.src.x0 = clamp(state.src.x0, -FOV, FOV); state.src.y0 = clamp(state.src.y0, -FOV, FOV); setX0(state.src.x0, false); setY0(state.src.y0, false); fullRecompute(); renderFITSCanvas();});
+
+const setZL = bindRangeNum('zL','zL_num', v=>{ state.cosmo.zL = Math.max(0, v); recomputeDistances(); updateStatsPanel(); });
+const setZS = bindRangeNum('zS','zS_num', v=>{ state.cosmo.zS = Math.max(0.001, v); recomputeDistances(); updateStatsPanel(); });
+const setH0 = bindRangeNum('H0','H0_num', v=>{ state.cosmo.H0 = Math.max(1, v); recomputeDistances(); updateStatsPanel(); });
+const setOm = bindRangeNum('Om','Om_num', v=>{ state.cosmo.Om = clamp(v, 0.01, 0.99); recomputeDistances(); updateStatsPanel(); });
+
+const setN  = bindRangeNum('n','n_num', v=>{ state.src.n=v;  renderSourcePlane(); renderImage(); });
+const setRe = bindRangeNum('Re','Re_num', v=>{ state.src.Re=v; renderSourcePlane(); renderImage(); });
+const setQ  = bindRangeNum('q','q_num', v=>{ state.src.q=v;  renderSourcePlane(); renderImage(); });
+const setPA = bindRangeNum('pa','pa_num', v=>{ state.src.pa=toRad(v); renderSourcePlane(); renderImage(); });
+const setI0 = bindRangeNum('I0','I0_num', v=>{ state.src.I0=v; renderSourcePlane(); renderImage(); });
+
+const setX0 = bindRangeNum('x0','x0_num', v=>{
+  state.src.x0 = clamp(v, -FOV, FOV);
+  renderSourcePlane(); renderImage();
+  recomputeTauMap(); renderTimeDelay();
+  updateStatsPanel();
+});
+const setY0 = bindRangeNum('y0','y0_num', v=>{
+  state.src.y0 = clamp(v, -FOV, FOV);
+  renderSourcePlane(); renderImage();
+  recomputeTauMap(); renderTimeDelay();
+  updateStatsPanel();
+});
+
+// Buttons & toggles
+ui('resetLens').addEventListener('click',()=>{
+  setThetaE(1.0, false);
+  setGamma(0.15, false);
+  setPhi(0, false);
+  setRes(512, false);
+  setFOV(3.0, false);
+  
+  state.thetaE = 1.0;
+  state.gamma  = 0.15;
+  state.phi    = toRad(0);
+  state.res    = 512;
+  
+  fullRecompute();
+  updateStatsPanel();
+});
+
+ui('centerSource').addEventListener('click',()=>{
+  state.src.x0=0; state.src.y0=0;
+  setX0(0, false); setY0(0, false);
+  renderSourcePlane(); renderImage();
+  recomputeTauMap(); renderTimeDelay();
+  updateStatsPanel();
+});
+
+ui('showCrit').addEventListener('change',()=>{ state.showCrit=ui('showCrit').checked; renderImage(); renderTimeDelay(); renderFITSCanvas();});
+ui('showAstroid').addEventListener('change',()=>{ state.showAstroid=ui('showAstroid').checked; renderSourcePlane(); });
+ui('showPseudo').addEventListener('change',()=>{ state.showPseudo=ui('showPseudo').checked; renderSourcePlane(); });
+
+ui('savePNG').addEventListener('click',()=>{
+  const N=state.res;
+  const out=document.createElement('canvas'); out.width=N*3; out.height=N;
+  const c=out.getContext('2d'); c.fillStyle='#000'; c.fillRect(0,0,out.width,out.height);
+  c.drawImage(srcCanvas,0,0,N,N); c.drawImage(imgCanvas,N,0,N,N); c.drawImage(tdCanvas,2*N,0,N,N);
+  const a=document.createElement('a'); a.href=out.toDataURL('image/png'); a.download='sis_shear_sersic_timedelay.png'; a.click();
+});
+
+// ---- Config export/import ----------------------------------------------------
+function deg(x){ return x * 180 / Math.PI; }
+function rad(x){ return x * Math.PI / 180; }
+
+function getConfigObject(){
+  return {
+    thetaE: state.thetaE,
+    gamma: state.gamma,
+    phi_deg: deg(state.phi),
+    res: state.res,
+    fov: FOV,                       // <— add this
+    showCrit: state.showCrit,
+    showAstroid: state.showAstroid,
+    showPseudo: state.showPseudo,
+    expo: state.expo,
+    cosmo: {                           // <— add this block
+      H0: state.cosmo.H0,
+      Om: state.cosmo.Om,
+      zL: state.cosmo.zL,
+      zS: state.cosmo.zS
+    },
+    src: {
+      x0: state.src.x0,
+      y0: state.src.y0,
+      n: state.src.n,
+      Re: state.src.Re,
+      q: state.src.q,
+      pa_deg: deg(state.src.pa),
+      I0: state.src.I0
+    }
+  };
+}
+
+function parseConfigText(txt){
+  const raw = txt.trim();
+  if(!raw) throw new Error("Empty config text.");
+  try { return JSON.parse(raw); } catch(_){}
+  let s = raw
+    .replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:/g, '$1"$2":')
+    .replace(/'/g, '"')
+    .replace(/\bTrue\b/g, 'true')
+    .replace(/\bFalse\b/g, 'false')
+    .replace(/\bNone\b/g, 'null');
+  return JSON.parse(s);
+
+}
+function strFromHdr(hdr, key){
+  if (!hdr.has(key)) return undefined;
+  return String(hdr.get(key)).split('/')[0].trim();
+}
+function numFromHdr(hdr, key){
+  const s = strFromHdr(hdr, key);
+  const n = Number(s);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function applyFITSWCS(hdr, W, H){
+  let scale_as = null;   // arcsec/pixel
+  let rot_rad  = 0;
+
+  // 1) Try CD matrix directly
+  let CD11 = numFromHdr(hdr,'CD1_1');
+  let CD12 = numFromHdr(hdr,'CD1_2');
+  let CD21 = numFromHdr(hdr,'CD2_1');
+  let CD22 = numFromHdr(hdr,'CD2_2');
+
+  // 2) If no CD, synthesize it from PC and CDELT
+  if (![CD11,CD12,CD21,CD22].every(Number.isFinite)) {
+    const CDELT1 = numFromHdr(hdr,'CDELT1');
+    const CDELT2 = numFromHdr(hdr,'CDELT2');
+
+    // PC defaults: identity
+    const PC11 = numFromHdr(hdr,'PC1_1'); const PC12 = numFromHdr(hdr,'PC1_2');
+    const PC21 = numFromHdr(hdr,'PC2_1'); const PC22 = numFromHdr(hdr,'PC2_2');
+    const pc11 = Number.isFinite(PC11) ? PC11 : 1;
+    const pc12 = Number.isFinite(PC12) ? PC12 : 0;
+    const pc21 = Number.isFinite(PC21) ? PC21 : 0;
+    const pc22 = Number.isFinite(PC22) ? PC22 : 1;
+
+    if (Number.isFinite(CDELT1) && Number.isFinite(CDELT2)) {
+      // CD = diag(CDELT) · PC
+      CD11 = CDELT1*pc11; CD12 = CDELT1*pc12;
+      CD21 = CDELT2*pc21; CD22 = CDELT2*pc22;
+    }
+  }
+
+  // Units (deg is FITS default unless explicitly arcsec)
+  const CUNIT1 = (strFromHdr(hdr,'CUNIT1') || '').toLowerCase();
+  const CUNIT2 = (strFromHdr(hdr,'CUNIT2') || '').toLowerCase();
+  const unitIsArcsec = CUNIT1.includes('arcsec') || CUNIT2.includes('arcsec');
+
+  // Compute pixel scale from CD columns (lengths of column vectors)
+  if ([CD11,CD12,CD21,CD22].every(Number.isFinite)) {
+    // sx, sy in "header units" per pixel
+    let sx = Math.hypot(CD11, CD21);
+    let sy = Math.hypot(CD12, CD22);
+    // Convert to arcsec/pix if needed
+    if (unitIsArcsec) {
+      scale_as = Math.sqrt(sx*sy);           // already arcsec/pix
+    } else {
+      scale_as = Math.sqrt(sx*sy) * 3600;    // deg/pix -> arcsec/pix
+    }
+    // rotation angle (optional, you’ve been forcing 0 anyway)
+    rot_rad = Math.atan2(CD21, CD22);
+  }
+
+  // Sanity check — if nonsense, ignore and infer from FoV
+  if (!Number.isFinite(scale_as) || scale_as <= 0 || scale_as > 50) {
+    scale_as = null;
+  }
+
+  // Your preference: center image and zero rotation for interactive alignment
+  state.fits.cx = (W - 1) / 2;
+  state.fits.cy = (H - 1) / 2;
+  state.fits.rot_rad = 0; // or keep `rot_rad` if you want WCS rotation
+
+  // Fallback/infer scale so the long side spans the FoV
+  const inferred = (2 * FOV) / Math.max(W, H); // arcsec/pix
+  state.fits.scale_as_per_pix = scale_as ?? inferred;
+
+  if (fitsScaleLabel) {
+    const tag = scale_as ? 'hdr' : '∼';
+    fitsScaleLabel.textContent = `${state.fits.scale_as_per_pix.toFixed(3)}″/px (${tag})`;
+  }
+}
+
+
+function applyConfig(obj){
+  const cfg = obj || {};
+  const s = cfg.src || {};
+  const C = cfg.cosmo || cfg;   // allow either nested "cosmo" or flat fields
+
+  // ---------- 1) Update UI controls only (no renders yet) ----------
+  if (typeof cfg.thetaE === 'number') setThetaE(cfg.thetaE, false);
+  if (typeof cfg.gamma  === 'number') setGamma(cfg.gamma,   false);
+  if (typeof cfg.res    === 'number') setRes(Math.round(cfg.res), false);
+  if (typeof cfg.fov    === 'number') setFOV(cfg.fov, false);
+
+  // cosmology (UI only, no renders)
+  if (typeof C.zL === 'number') setZL(C.zL, false);
+  if (typeof C.zS === 'number') setZS(C.zS, false);
+  if (typeof C.H0 === 'number') setH0(C.H0, false);
+  if (typeof C.Om === 'number') setOm(C.Om, false);
+
+  // ---------- 1) Update UI controls only (no renders yet) ----------
+  if (typeof cfg.thetaE === 'number') setThetaE(cfg.thetaE, false);
+  if (typeof cfg.gamma  === 'number') setGamma(cfg.gamma,   false);
+  if (typeof cfg.res    === 'number') setRes(Math.round(cfg.res), false);
+  if (typeof cfg.fov    === 'number') setFOV(cfg.fov, false);  // <-- add this
+
+  const phiDeg =
+    (typeof cfg.phi_deg === 'number') ? cfg.phi_deg :
+    (typeof cfg.phi_rad === 'number') ? deg(cfg.phi_rad) :
+    (typeof cfg.phi     === 'number') ? cfg.phi : deg(state.phi);
+  setPhi(phiDeg, false);
+  state.phi = rad(phiDeg);   // <— make the new shear PA effective
+  const paDeg =
+    (typeof s.pa_deg === 'number') ? s.pa_deg :
+    (typeof s.pa_rad === 'number') ? deg(s.pa_rad) :
+    (typeof s.pa     === 'number') ? s.pa : deg(state.src.pa);
+  setPA(paDeg, false);
+
+  if (typeof s.x0 === 'number') setX0(s.x0, false);
+  if (typeof s.y0 === 'number') setY0(s.y0, false);
+  if (typeof s.n  === 'number') setN(s.n,   false);
+  if (typeof s.Re === 'number') setRe(s.Re, false);
+  if (typeof s.q  === 'number') setQ(s.q,   false);
+  if (typeof s.I0 === 'number') setI0(s.I0, false);
+
+if (typeof cfg.showCrit    === 'boolean') ui('showCrit').checked    = cfg.showCrit;
+  if (typeof cfg.showAstroid === 'boolean') ui('showAstroid').checked = cfg.showAstroid;
+  if (typeof cfg.showPseudo  === 'boolean') ui('showPseudo').checked  = cfg.showPseudo;
+
+  // ---------- 2) Sync underlying STATE in one shot ----------
+  if (typeof cfg.thetaE === 'number') state.thetaE = cfg.thetaE;
+  if (typeof cfg.gamma  === 'number') state.gamma  = cfg.gamma;
+  if (typeof cfg.res    === 'number') state.res    = Math.round(cfg.res);
+  if (typeof cfg.fov    === 'number') FOV         = Math.max(0.1, cfg.fov);
+
+  // cosmology (STATE)
+  if (typeof C.zL === 'number') state.cosmo.zL = C.zL;
+  if (typeof C.zS === 'number') state.cosmo.zS = C.zS;
+  if (typeof C.H0 === 'number') state.cosmo.H0 = C.H0;
+  if (typeof C.Om === 'number') state.cosmo.Om = C.Om;
+
+  // clamp source to (potentially new) FoV
+  state.src.x0 = clamp(state.src.x0, -FOV, FOV);
+  state.src.y0 = clamp(state.src.y0, -FOV, FOV);
+
+  state.src.pa = rad(paDeg);
+  if (typeof s.x0 === 'number') state.src.x0 = clamp(s.x0, -FOV, FOV);
+  if (typeof s.y0 === 'number') state.src.y0 = clamp(s.y0, -FOV, FOV);
+  if (typeof s.n  === 'number') state.src.n  = s.n;
+  if (typeof s.Re === 'number') state.src.Re = s.Re;
+  if (typeof s.q  === 'number') state.src.q  = s.q;
+  if (typeof s.I0 === 'number') state.src.I0 = s.I0;
+
+  if (typeof cfg.showCrit    === 'boolean') state.showCrit    = cfg.showCrit;
+  if (typeof cfg.showAstroid === 'boolean') state.showAstroid = cfg.showAstroid;
+  if (typeof cfg.showPseudo  === 'boolean') state.showPseudo  = cfg.showPseudo;
+
+  state.expo = FIXED_EXPO;
+
+  // ---------- 3) Recompute & redraw ----------
+  fullRecompute();        // lens/source/τ images
+  recomputeDistances();   // <— compute angular-diameter + time-delay factor once
+  updateStatsPanel();     // <— refresh text with physical Δt
+}
+
+ui('exportCfg').addEventListener('click', ()=>{
+  const txt = JSON.stringify(getConfigObject(), null, 2);
+  ui('cfgText').value = txt;
+});
+
+ui('copyCfg').addEventListener('click', async ()=>{
+  const el = ui('cfgText');
+  if(!el.value.trim()) {
+    el.value = JSON.stringify(getConfigObject(), null, 2);
+  }
+  try{
+    await navigator.clipboard.writeText(el.value);
+    el.style.outline = '1px solid var(--accent)';
+    setTimeout(()=> el.style.outline = '', 500);
+  }catch(err){
+    el.select();
+  }
+});
+
+ui('applyCfg').addEventListener('click', ()=>{
+  const el = ui('cfgText');
+  try{
+    const cfg = parseConfigText(el.value);
+    applyConfig(cfg);
+    el.style.outline = '1px solid var(--ok)';
+    setTimeout(()=> el.style.outline = '', 500);
+  }catch(err){
+    el.style.outline = '1px solid var(--warn)';
+    console.error(err);
+    alert('Could not parse config. Make sure it is valid JSON or a Python-style dict.');
+    setTimeout(()=> el.style.outline = '', 1200);
+  }
+});
+
+// ---------------- COOLEST template import/export ----------------
+function makeParam(v){ return { fixed:false, point_estimate:{ value: v }, posterior_stats:{ mean:null, median:null, percentile_16th:null, percentile_84th:null }, prior:{ type:null } }; }
+
+function applyCoolestTemplate(tpl){
+  try{
+    const cfg = { cosmo: {} };
+    const cosmo = tpl.cosmology || tpl.cosmology || {};
+    if (cosmo){ if (typeof cosmo.H0 === 'number') cfg.cosmo.H0 = cosmo.H0; if (typeof cosmo.Om0 === 'number') cfg.cosmo.Om = cosmo.Om0; if (typeof cosmo.Om === 'number') cfg.cosmo.Om = cosmo.Om; }
+    const entities = tpl.lensing_entities || tpl.lensingEntities || [];
+    // Mass model: pick first mass model with theta_E or gamma
+    let foundLensRedshift = false;
+    let foundSourceRedshift = false;
+    for(const ent of entities){
+      // capture lens redshift (first entity with a mass model)
+      if (!foundLensRedshift && Array.isArray(ent.mass_model) && ent.mass_model.length>0 && typeof ent.redshift === 'number'){
+        cfg.cosmo.zL = ent.redshift; foundLensRedshift = true;
+      }
+      const mm = ent.mass_model || ent.massModel || [];
+      for(const m of mm){
+        const p = m.parameters || {};
+        if (p.theta_E && p.theta_E.point_estimate && typeof p.theta_E.point_estimate.value === 'number') cfg.thetaE = p.theta_E.point_estimate.value;
+        if (p.gamma_ext && p.gamma_ext.point_estimate && typeof p.gamma_ext.point_estimate.value === 'number') cfg.gamma = p.gamma_ext.point_estimate.value;
+        if (p.phi_ext && p.phi_ext.point_estimate && typeof p.phi_ext.point_estimate.value === 'number') cfg.phi_deg = p.phi_ext.point_estimate.value;
+      }
+    }
+    // Source light: find Sersic
+    for(const ent of entities){
+      const lm = ent.light_model || ent.lightModel || [];
+      for(const L of lm){
+        const type = (L.type || '').toLowerCase();
+        if (type.includes('sersic')){
+          // capture source redshift if present on this entity
+          if (!foundSourceRedshift && typeof ent.redshift === 'number'){ cfg.cosmo.zS = ent.redshift; foundSourceRedshift = true; }
+          const p = L.parameters || {};
+          cfg.src = {};
+          if (p.center_x && p.center_x.point_estimate) cfg.src.x0 = p.center_x.point_estimate.value;
+          if (p.center_y && p.center_y.point_estimate) cfg.src.y0 = p.center_y.point_estimate.value;
+          if (p.n && p.n.point_estimate) cfg.src.n = p.n.point_estimate.value;
+          if (p.theta_eff && p.theta_eff.point_estimate) cfg.src.Re = p.theta_eff.point_estimate.value;
+          if (p.q && p.q.point_estimate) cfg.src.q = p.q.point_estimate.value;
+          if (p.phi && p.phi.point_estimate) cfg.src.pa_deg = p.phi.point_estimate.value;
+          if (p.I_eff && p.I_eff.point_estimate) cfg.src.I0 = p.I_eff.point_estimate.value;
+        }
+      }
+    }
+    applyConfig(cfg);
+    alert('COOLEST template applied.');
+  }catch(err){ console.error(err); alert('Failed to apply COOLEST template: '+err); }
+}
+
+function buildCoolestTemplate(){
+  const tpl = {
+    coordinates_origin: {},
+    cosmology: { H0: state.cosmo.H0, Om0: state.cosmo.Om },
+    instrument: { band:'', name:'', pixel_size: null, psf:{ description:null, type:null }, readout_noise: 0.0 },
+    lensing_entities: [],
+    meta: {},
+    mode: 'MAP',
+    observation: { exposure_time: null, mag_sky_brightness: null, mag_zero_point: null, noise:{ type:null }, pixels: { field_of_view_x: [-FOV, FOV], field_of_view_y: [-FOV, FOV], fits_file:{ path:null }, num_pix_x: state.res, num_pix_y: state.res } },
+    standard: 'COOLEST'
+  };
+
+  const sisParams = {};
+  sisParams.center_x = makeParam(0.0);
+  sisParams.center_y = makeParam(0.0);
+  sisParams.q = makeParam(1.0);
+  sisParams.theta_E = makeParam(state.thetaE);
+  
+  const shearParams = {};
+  shearParams.gamma_ext = makeParam(state.gamma);
+  shearParams.phi_ext = makeParam(deg(state.phi));
+
+  tpl.lensing_entities.push({ light_model: [], mass_model: [ { type: 'PEMD', parameters: sisParams }, {type: 'ExternalShear', parameters: shearParams} ], name: 'lens', redshift: state.cosmo.zL, type: 'Galaxy' });
+
+  const srcParams = {};
+  srcParams.center_x = makeParam(state.src.x0);
+  srcParams.center_y = makeParam(state.src.y0);
+  srcParams.n = makeParam(state.src.n);
+  srcParams.theta_eff = makeParam(state.src.Re);
+  srcParams.q = makeParam(state.src.q);
+  srcParams.phi = makeParam(deg(state.src.pa));
+  srcParams.I_eff = makeParam(state.src.I0);
+
+  tpl.lensing_entities.push({ light_model: [ { type: 'Sersic', parameters: srcParams } ], mass_model: [], name: 'source', redshift: state.cosmo.zS, type: 'Galaxy' });
+
+  return tpl;
+}
+
+ui('chooseTemplate').addEventListener('click', ()=> ui('templateFileInput').click());
+ui('templateFileInput').addEventListener('change', async (ev)=>{
+  const f = ev.target.files && ev.target.files[0];
+  if(!f) return;
+  try{
+    const txt = await f.text();
+    const obj = JSON.parse(txt);
+    applyCoolestTemplate(obj);
+  }catch(err){ console.error(err); alert('Could not parse template JSON: '+err); }
+});
+
+ui('importTemplate').addEventListener('click', ()=>{
+  const el = ui('templateFileInput');
+  if(el.files && el.files[0]) el.dispatchEvent(new Event('change'));
+  else ui('templateFileInput').click();
+});
+
+ui('exportTemplate').addEventListener('click', ()=>{
+  const tpl = buildCoolestTemplate();
+  const txt = JSON.stringify(tpl, null, 2);
+  const a = document.createElement('a');
+  a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(txt);
+  a.download = 'coolest_template.json';
+  a.click();
+});
+
+function fullRecompute(){
+  srcCanvas.width=state.res; srcCanvas.height=state.res;
+  imgCanvas.width=state.res; imgCanvas.height=state.res;
+  tdCanvas.width =state.res; tdCanvas.height =state.res;
+  recomputeLensMaps();
+  recomputeTauMap();
+  renderSourcePlane();
+  renderImage();
+  renderTimeDelay();
+  updateStatsPanel();         // <— add
+  renderFITSCanvas(); // <-- repaint FITS whenever FoV/res changes
+}
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  requestAnimationFrame(()=>{
+    srcCtx  = setupCanvas(srcCanvas);
+    imgCtx  = setupCanvas(imgCanvas);
+    tdCtx   = setupCanvas(tdCanvas);
+    fitsCtx = setupCanvas(fitsCanvas);
+    fullRecompute();        // draws model
+    recomputeDistances();
+    updateStatsPanel();
+    renderFITSCanvas();     // draws FITS now that size > 0
+  });
+});
+
+// Initial draw
+fullRecompute();
+recomputeDistances();
+updateStatsPanel();
+</script>
+</body>
+</html>

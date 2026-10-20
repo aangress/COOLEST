@@ -1,0 +1,297 @@
+{
+  "standard": "COOLEST",
+  "mode": "MAP",
+  "coordinates_origin": {
+    "ra": "00h00m00s",
+    "dec": "+00d00m00s"
+  },
+  "cosmology": {
+    "H0": 70.0,
+    "Om0": 0.3,
+    "astropy_name": "FlatLambdaCDM"
+  },
+  "instrument": {
+    "name": "Aaron's Eyeballs",
+    "band": "optical",
+    "pixel_size": 0.1,
+    "readout_noise": 0.0,
+    "psf": {
+      "description": "Default Gaussian PSF",
+      "type": "GaussianPSF",
+      "fwhm": 1.0
+    }
+  },
+  "observation": {
+    "pixels": {
+      "field_of_view_x": [
+        -5.0,
+        5.0
+      ],
+      "field_of_view_y": [
+        -5.0,
+        5.0
+      ],
+      "fits_file": {
+        "path": null
+      },
+      "num_pix_x": 100,
+      "num_pix_y": 100
+    },
+    "noise": {
+      "type": "UniformGaussianNoise",
+      "std_dev": 0.01
+    },
+    "exposure_time": 1000.0,
+    "mag_sky_brightness": null,
+    "mag_zero_point": 27.0
+  },
+  "lensing_entities": [
+    {
+      "name": "lens",
+      "type": "Galaxy",
+      "redshift": 0.5,
+      "mass_model": [
+        {
+          "type": "PEMD",
+          "parameters": {
+            "theta_E": {
+              "point_estimate": {
+                "value": 1.2
+              },
+              "posterior_stats": {
+                "mean": null,
+                "median": null,
+                "percentile_16th": null,
+                "percentile_84th": null
+              },
+              "prior": {
+                "type": null
+              }
+            },
+            "gamma": {
+              "point_estimate": {
+                "value": 2.0
+              },
+              "posterior_stats": {
+                "mean": null,
+                "median": null,
+                "percentile_16th": null,
+                "percentile_84th": null
+              },
+              "prior": {
+                "type": null
+              }
+            },
+            "q": {
+              "point_estimate": {
+                "value": 1.0
+              },
+              "posterior_stats": {
+                "mean": null,
+                "median": null,
+                "percentile_16th": null,
+                "percentile_84th": null
+              },
+              "prior": {
+                "type": null
+              }
+            },
+            "phi": {
+              "point_estimate": {
+                "value": 0.0
+              },
+              "posterior_stats": {
+                "mean": null,
+                "median": null,
+                "percentile_16th": null,
+                "percentile_84th": null
+              },
+              "prior": {
+                "type": null
+              }
+            },
+            "center_x": {
+              "point_estimate": {
+                "value": 0.0
+              },
+              "posterior_stats": {
+                "mean": null,
+                "median": null,
+                "percentile_16th": null,
+                "percentile_84th": null
+              },
+              "prior": {
+                "type": null
+              }
+            },
+            "center_y": {
+              "point_estimate": {
+                "value": 0.0
+              },
+              "posterior_stats": {
+                "mean": null,
+                "median": null,
+                "percentile_16th": null,
+                "percentile_84th": null
+              },
+              "prior": {
+                "type": null
+              }
+            }
+          }
+        },
+        {
+          "type": "ExternalShear",
+          "parameters": {
+            "gamma_ext": {
+              "point_estimate": {
+                "value": 0.02
+              },
+              "posterior_stats": {
+                "mean": null,
+                "median": null,
+                "percentile_16th": null,
+                "percentile_84th": null
+              },
+              "prior": {
+                "type": null
+              }
+            },
+            "phi_ext": {
+              "point_estimate": {
+                "value": 30.0
+              },
+              "posterior_stats": {
+                "mean": null,
+                "median": null,
+                "percentile_16th": null,
+                "percentile_84th": null
+              },
+              "prior": {
+                "type": null
+              }
+            }
+          }
+        }
+      ],
+      "light_model": []
+    },
+    {
+      "name": "source",
+      "type": "Galaxy",
+      "redshift": 1.0,
+      "mass_model": [],
+      "light_model": [
+        {
+          "type": "Sersic",
+          "parameters": {
+            "I_eff": {
+              "point_estimate": {
+                "value": 1.1
+              },
+              "posterior_stats": {
+                "mean": null,
+                "median": null,
+                "percentile_16th": null,
+                "percentile_84th": null
+              },
+              "prior": {
+                "type": null
+              }
+            },
+            "theta_eff": {
+              "point_estimate": {
+                "value": 0.2
+              },
+              "posterior_stats": {
+                "mean": null,
+                "median": null,
+                "percentile_16th": null,
+                "percentile_84th": null
+              },
+              "prior": {
+                "type": null
+              }
+            },
+            "n": {
+              "point_estimate": {
+                "value": 2.0
+              },
+              "posterior_stats": {
+                "mean": null,
+                "median": null,
+                "percentile_16th": null,
+                "percentile_84th": null
+              },
+              "prior": {
+                "type": null
+              }
+            },
+            "q": {
+              "point_estimate": {
+                "value": 0.9
+              },
+              "posterior_stats": {
+                "mean": null,
+                "median": null,
+                "percentile_16th": null,
+                "percentile_84th": null
+              },
+              "prior": {
+                "type": null
+              }
+            },
+            "phi": {
+              "point_estimate": {
+                "value": 12.0
+              },
+              "posterior_stats": {
+                "mean": null,
+                "median": null,
+                "percentile_16th": null,
+                "percentile_84th": null
+              },
+              "prior": {
+                "type": null
+              }
+            },
+            "center_x": {
+              "point_estimate": {
+                "value": 0.0
+              },
+              "posterior_stats": {
+                "mean": null,
+                "median": null,
+                "percentile_16th": null,
+                "percentile_84th": null
+              },
+              "prior": {
+                "type": null
+              }
+            },
+            "center_y": {
+              "point_estimate": {
+                "value": 0.0
+              },
+              "posterior_stats": {
+                "mean": null,
+                "median": null,
+                "percentile_16th": null,
+                "percentile_84th": null
+              },
+              "prior": {
+                "type": null
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "meta": {
+    "best_fit_reduced_chi2": null,
+    "model_choice": "SIS + Shear + Sersic Source",
+    "modeling_code": "Custom",
+    "chain_file_name": null
+  }
+}
